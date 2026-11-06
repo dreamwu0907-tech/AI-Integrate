@@ -28,6 +28,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "";
+    const allowedOrigins = (env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim()).filter(Boolean);
+    if (origin && !allowedOrigins.includes(origin)) return json({ error: "此網站來源未獲授權。" }, 403);
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(origin, env) });
     }
@@ -50,19 +52,23 @@ export default {
         const body = await upstream.json();
         if (!upstream.ok) return withCors(json({ error: body.error?.message || "無法取得模型清單。" }, upstream.status), origin, env);
         const models = (body.data || [])
-          .filter(m => m.id?.endsWith(":free") || (Number(m.pricing?.prompt) === 0 && Number(m.pricing?.completion) === 0))
+          .filter(m => m.id?.endsWith(":free") && m.architecture?.output_modalities?.includes("text"))
           .map(m => ({ id: m.id, name: m.name || m.id, context_length: m.context_length || null }))
           .sort((a, b) => a.name.localeCompare(b.name));
         return withCors(json({ models }), origin, env);
       }
       if (url.pathname === "/api/chat" && request.method === "POST") {
+        const contentLength = Number(request.headers.get("Content-Length") || 0);
+        if (contentLength > 50000) return withCors(json({ error: "請求內容過大，請縮短問題後重試。" }, 413), origin, env);
         const payload = await request.json();
         const model = String(payload.model || "");
         const allowedFreeModel = model === FREE_ROUTER || model.endsWith(":free");
         if (!allowedFreeModel) return withCors(json({ error: "安全限制：只允許 openrouter/free 或 :free 模型。" }, 400), origin, env);
-        if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
-          return withCors(json({ error: "messages 不可為空。" }, 400), origin, env);
+        if (!Array.isArray(payload.messages) || payload.messages.length === 0 || payload.messages.length > 12) {
+          return withCors(json({ error: "訊息格式錯誤或訊息數量超出限制。" }, 400), origin, env);
         }
+        const totalChars = payload.messages.reduce((sum, item) => sum + String(item.content || "").length, 0);
+        if (totalChars > 20000) return withCors(json({ error: "問題內容超過 20,000 字元限制。" }, 413), origin, env);
         const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
