@@ -1,0 +1,7 @@
+name = "ai-integrate-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://dreamwu0907-tech.github.io"
+APP_SITE_URL = "https://dreamwu0907-tech.github.io/AI-Integrate/"
