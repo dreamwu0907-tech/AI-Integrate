@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Activity, ArrowDownUp, Bot, Check, ChevronDown, CircleHelp, Clock3, Copy, Cpu, History, KeyRound, LoaderCircle, MessageSquare, RefreshCw, Send, Settings2, ShieldCheck, Sparkles, Trash2, Users, Zap } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.VITE_API_BASE || localStorage.getItem("ai-integrate-api-base") || "";
 const STORE_KEY = "ai-integrate-history-v1";
 const TOKEN_KEY = "ai-integrate-access-token";
 
@@ -173,7 +173,7 @@ export default function App() {
       <label className="field-label">Cloudflare Worker API 網址<input value={apiBaseDraft} onChange={e => setApiBaseDraft(e.target.value)} placeholder="https://your-worker.your-subdomain.workers.dev"/></label>
       <label className="field-label">Worker 存取金鑰<input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="輸入你自行設定的 APP_ACCESS_TOKEN"/></label>
       <div className="security-note"><KeyRound size={16}/> 金鑰僅保存在此瀏覽器的 LocalStorage，不會提交至 GitHub。OpenRouter API Key 必須設定在 Cloudflare Worker Secret。</div>
-      <div className="modal-actions"><button className="secondary-button" onClick={() => { setToken(""); localStorage.removeItem(TOKEN_KEY); }}>清除金鑰</button><button className="primary-button" onClick={() => { localStorage.setItem(TOKEN_KEY, token); setShowSettings(false); loadModels(); }}>儲存並測試連線</button></div>
+      <div className="modal-actions"><button className="secondary-button" onClick={() => { setToken(""); localStorage.removeItem(TOKEN_KEY); }}>清除金鑰</button><button className="primary-button" onClick={() => { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem("ai-integrate-api-base", apiBaseDraft); setShowSettings(false); loadModels(); }}>儲存並測試連線</button></div>
       <p className="modal-help">尚未部署後端？請先依專案 README 完成 Cloudflare Worker 設定。</p>
     </div></div>}
   </div>;
