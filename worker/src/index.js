@@ -81,7 +81,7 @@ export default {
             model,
             messages: payload.messages,
             temperature: 0.3,
-            max_tokens: 1800
+            max_tokens: Math.min(Math.max(Number(payload.max_tokens) || 1800, 256), 3000)
           })
         });
         const body = await upstream.json();
