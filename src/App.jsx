@@ -41,6 +41,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [apiBaseDraft, setApiBaseDraft] = useState(API_BASE);
   const task = useMemo(() => classifyTask(prompt), [prompt]);
+  const modeLabels = { auto: "自動選擇", deep: "深度分析", coding: "程式開發", compare: "多 AI 比較" };
 
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(history.slice(0, 40))); }, [history]);
   useEffect(() => { if (token) loadModels(); }, []);
@@ -93,12 +94,19 @@ export default function App() {
         const record = { id: Date.now(), prompt, task: taskType, mode, responses: rows, createdAt: new Date().toISOString() };
         setHistory(h => [record, ...h].slice(0, 40));
       } else {
+        const systemPrompts = {
+          auto: `你是一位精準、謹慎的繁體中文助理。此任務類型為「${taskLabels[taskType]}」。請依任務需求回答；涉及即時資訊時明確指出需要查證，不要捏造來源或數據。`,
+          deep: `你是一位嚴謹的研究與推理助理。請以繁體中文回答「${taskLabels[taskType]}」相關問題。先界定問題與假設，再分步分析、檢查計算與反例，最後給出結論、限制及可執行建議。區分已知事實、推論與不確定事項；資料不足時明確說明，不要捏造來源或數據。`,
+          coding: `你是一位資深軟體工程師，使用繁體中文溝通。請針對使用者的程式開發需求，先理解現有架構與相容性，再提供可直接執行的方案或完整程式碼。指出修改檔案、依賴、測試方式及可能風險；不要假設未提供的檔案或環境存在。`
+        };
+        const activeMode = mode === "deep" || mode === "coding" ? mode : "auto";
         const data = await request("/api/chat", {
           method: "POST",
           body: JSON.stringify({
             model: "openrouter/free",
+            max_tokens: activeMode === "auto" ? 1800 : 3000,
             messages: [
-              { role: "system", content: `你是一位精準、謹慎的繁體中文助理。此任務類型為「${taskLabels[taskType]}」。請依任務需求回答；涉及即時資訊時明確指出需要查證，不要捏造來源或數據。` },
+              { role: "system", content: systemPrompts[activeMode] },
               { role: "user", content: prompt }
             ]
           })
@@ -120,12 +128,12 @@ export default function App() {
       <div className="brand"><div className="brand-icon"><Bot size={22}/></div><div><b>AI Integrate</b><small>PERSONAL AI WORKSPACE</small></div></div>
       <div className="nav-label">工作區</div>
       <button className={page === "chat" ? "nav-item active" : "nav-item"} onClick={() => setPage("chat")}><MessageSquare size={17}/> AI 對話</button>
-      <button className={page === "models" ? "nav-item active" : "nav-item"} onClick={() => setPage("models")}><Cpu size={17}/> 免費模型管理</button>
+      <button className={page === "models" ? "nav-item active" : "nav-item"} onClick={() => setPage("models")}><Cpu size={17}/> 模型管理</button>
       <button className={page === "history" ? "nav-item active" : "nav-item"} onClick={() => setPage("history")}><History size={17}/> 使用紀錄</button>
       <div className="sidebar-bottom">
         <div className="connection"><span className={models.length ? "dot online" : "dot"}></span><span>{status}</span></div>
         <button className="nav-item" onClick={() => setShowSettings(true)}><Settings2 size={17}/> 連線設定</button>
-        <div className="free-note"><ShieldCheck size={16}/><span>免費模型限定<br/>不自動呼叫付費模型</span></div>
+        <div className="free-note"><ShieldCheck size={16}/><span>免費模型優先<br/>目前不會呼叫付費模型</span></div>
       </div>
     </aside>
 
@@ -139,11 +147,13 @@ export default function App() {
       {page === "chat" && <section className="content chat-content">
         <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14}/> MULTI-MODEL AI</div><h1>今天想處理什麼？</h1><p>一個入口連接多種 AI，依任務自動選擇或並排比較答案。</p></div><div className="heading-chip"><Zap size={15}/> 免費優先</div></div>
         <div className="mode-switch">
-          <button className={mode === "auto" ? "mode active" : "mode"} onClick={() => setMode("auto")}><Sparkles size={16}/><span><b>自動選擇</b><small>由免費模型路由器回答</small></span></button>
-          <button className={mode === "compare" ? "mode active" : "mode"} onClick={() => setMode("compare")}><Users size={16}/><span><b>多 AI 比較</b><small>同一問題交給 2–3 個模型</small></span></button>
+          <button className={mode === "auto" ? "mode active" : "mode"} onClick={() => setMode("auto")}><Sparkles size={16}/><span><b>一般對話</b><small>免費模型自動路由</small></span></button>
+          <button className={mode === "deep" ? "mode active" : "mode"} onClick={() => setMode("deep")}><Activity size={16}/><span><b>深度分析</b><small>分步推理與交叉檢查</small></span></button>
+          <button className={mode === "coding" ? "mode active" : "mode"} onClick={() => setMode("coding")}><Cpu size={16}/><span><b>程式開發</b><small>架構、程式碼與測試</small></span></button>
+          <button className={mode === "compare" ? "mode active" : "mode"} onClick={() => setMode("compare")}><Users size={16}/><span><b>多 AI 比較</b><small>同一問題比較 2–3 模型</small></span></button>
         </div>
 
-        {mode === "compare" && <div className="model-picker panel"><div className="panel-title"><span>選擇比較模型</span><small>最多 3 個 · 僅顯示免費模型</small></div>
+        {mode === "compare" && <div className="model-picker panel"><div className="panel-title"><span>選擇比較模型</span><small>最多 3 個 · 目前僅顯示免費模型</small></div>
           {models.length ? <div className="model-options">{models.slice(0, 30).map(m => <label key={m.id} className="model-option"><input type="checkbox" checked={selected.includes(m.id)} onChange={e => setSelected(s => e.target.checked ? [...s, m.id].slice(-3) : s.filter(x => x !== m.id))}/><span>{m.name || m.id}</span><small>{m.id}</small></label>)}</div> : <div className="empty-inline">請先完成連線設定並取得模型清單。</div>}
         </div>}
 
@@ -153,20 +163,20 @@ export default function App() {
           <div className="composer-bottom"><span>Ctrl / ⌘ + Enter 送出</span><button className="primary-button" onClick={submit} disabled={loading || !prompt.trim()}>{loading ? <LoaderCircle className="spin" size={17}/> : <Send size={16}/>} {loading ? "處理中…" : "送出問題"}</button></div>
         </div>
         {error && <div className="error-box"><CircleHelp size={17}/>{error}</div>}
-        {loading && <div className="loading-line"><LoaderCircle className="spin" size={18}/> 正在等待模型回覆，免費模型可能因供應商負載而較慢…</div>}
-        {responses.length > 0 && <div className="results"><div className="results-heading"><div><div className="eyebrow">AI OUTPUT</div><h2>模型回答</h2></div><button className="text-button" onClick={() => copy(responses.map(r => `【${r.model}】\n${r.text}`).join("\n\n"))}><Copy size={15}/> 複製全部</button></div><div className={responses.length > 1 ? "response-grid" : "response-grid single"}>{responses.map((r, i) => <article className="response-card" key={i}><div className="response-head"><span className="model-avatar"><Bot size={17}/></span><div><b>{r.model}</b><small>{r.failed ? "請求失敗" : "免費模型回覆"}</small></div><button className="icon-button" onClick={() => copy(r.text)} title="複製答案"><Copy size={16}/></button></div><div className="response-text">{r.text}</div></article>)}</div></div>}
-        {!responses.length && <div className="hint-row"><div className="hint-icon"><Activity size={18}/></div><div><b>任務分類會先在本機執行</b><span>目前支援一般問答、翻譯、工程、研究及程式開發。自動模式使用 OpenRouter 免費路由。</span></div></div>}
+        {loading && <div className="loading-line"><LoaderCircle className="spin" size={18}/> 正在等待模型回覆，目前使用免費模型，可能因供應商負載而較慢…</div>}
+        {responses.length > 0 && <div className="results"><div className="results-heading"><div><div className="eyebrow">AI OUTPUT</div><h2>模型回答</h2></div><button className="text-button" onClick={() => copy(responses.map(r => `【${r.model}】\n${r.text}`).join("\n\n"))}><Copy size={15}/> 複製全部</button></div><div className={responses.length > 1 ? "response-grid" : "response-grid single"}>{responses.map((r, i) => <article className="response-card" key={i}><div className="response-head"><span className="model-avatar"><Bot size={17}/></span><div><b>{r.model}</b><small>{r.failed ? "請求失敗" : "{modeLabels[mode] || "免費模型回覆"}"}</small></div><button className="icon-button" onClick={() => copy(r.text)} title="複製答案"><Copy size={16}/></button></div><div className="response-text">{r.text}</div></article>)}</div></div>}
+        {!responses.length && <div className="hint-row"><div className="hint-icon"><Activity size={18}/></div><div><b>任務分類會先在本機執行</b><span>可切換一般對話、深度分析與程式開發；目前三種模式都使用 OpenRouter 免費路由，不會產生付費模型費用。</span></div></div>}
       </section>}
 
-      {page === "models" && <section className="content"><div className="page-heading"><div><div className="eyebrow"><Cpu size={14}/> MODEL DIRECTORY</div><h1>免費模型管理</h1><p>由 OpenRouter 即時取得免費模型清單。實際可用性仍受模型供應商限制。</p></div><button className="secondary-button" onClick={loadModels}><RefreshCw size={15}/> 更新清單</button></div>
-        <div className="stats-grid"><div className="stat-card"><small>可用免費模型</small><strong>{models.length}</strong><span>目前 API 回傳</span></div><div className="stat-card"><small>已選取比較模型</small><strong>{selected.length}</strong><span>最多 3 個</span></div><div className="stat-card"><small>模型存取策略</small><strong>Free</strong><span>不使用付費模型</span></div></div>
-        <div className="panel model-table"><div className="panel-title"><b>模型清單</b><small>{models.length ? "依 API 回傳順序" : "尚未取得資料"}</small></div>{models.length ? models.map(m => <div className="model-row" key={m.id}><div className="model-avatar"><Bot size={17}/></div><div className="model-info"><b>{m.name || m.id}</b><small>{m.id}</small></div><span className="free-tag">FREE</span><button className={selected.includes(m.id) ? "select-model chosen" : "select-model"} onClick={() => setSelected(s => selected.includes(m.id) ? s.filter(x => x !== m.id) : [...s, m.id].slice(-3))}>{selected.includes(m.id) ? <><Check size={14}/> 已選</> : "加入比較"}</button></div>) : <div className="empty-state"><Cpu size={30}/><b>尚未載入模型</b><span>請先設定 Worker 網址與存取金鑰。</span></div>}</div>
+      {page === "models" && <section className="content"><div className="page-heading"><div><div className="eyebrow"><Cpu size={14}/> MODEL DIRECTORY</div><h1>模型管理</h1><p>目前只列出免費文字模型；付費模型尚未開放，避免意外產生費用。</p></div><button className="secondary-button" onClick={loadModels}><RefreshCw size={15}/> 更新清單</button></div>
+        <div className="stats-grid"><div className="stat-card"><small>可用免費模型</small><strong>{models.length}</strong><span>目前 API 回傳</span></div><div className="stat-card"><small>已選取比較模型</small><strong>{selected.length}</strong><span>最多 3 個</span></div><div className="stat-card"><small>模型存取策略</small><strong>Free</strong><span>目前僅限免費</span></div></div>
+        <div className="panel model-table"><div className="panel-title"><b>模型清單</b><small>{models.length ? "免費模型 · 依 API 回傳順序" : "尚未取得資料"}</small></div>{models.length ? models.map(m => <div className="model-row" key={m.id}><div className="model-avatar"><Bot size={17}/></div><div className="model-info"><b>{m.name || m.id}</b><small>{m.id}</small></div><span className="free-tag">FREE</span><button className={selected.includes(m.id) ? "select-model chosen" : "select-model"} onClick={() => setSelected(s => selected.includes(m.id) ? s.filter(x => x !== m.id) : [...s, m.id].slice(-3))}>{selected.includes(m.id) ? <><Check size={14}/> 已選</> : "加入比較"}</button></div>) : <div className="empty-state"><Cpu size={30}/><b>尚未載入模型</b><span>請先設定 Worker 網址與存取金鑰。</span></div>}</div>
       </section>}
 
       {page === "history" && <section className="content"><div className="page-heading"><div><div className="eyebrow"><History size={14}/> LOCAL HISTORY</div><h1>使用紀錄</h1><p>紀錄只儲存在目前瀏覽器，不會同步到雲端。</p></div><button className="secondary-button danger-text" onClick={() => { if (confirm("確定清除所有本機紀錄？")) setHistory([]); }}><Trash2 size={15}/> 清除紀錄</button></div>
         <div className="history-list">{history.length ? history.map(r => <article className="history-card" key={r.id}><div className="history-meta"><span className="task-pill">{taskLabels[r.task] || "一般問答"}</span><small><Clock3 size={13}/> {new Date(r.createdAt).toLocaleString("zh-TW")}</small></div><b>{r.prompt}</b><div className="history-foot"><span>{r.responses?.length || 0} 個模型回覆</span><button className="text-button" onClick={() => restore(r)}>查看對話 <ArrowDownUp size={14}/></button></div></article>) : <div className="empty-state"><History size={30}/><b>目前沒有使用紀錄</b><span>完成第一次提問後，紀錄會顯示在這裡。</span></div>}</div>
       </section>}
-      <footer className="footer">AI Integrate <span>·</span> 個人使用工具 <span>·</span> 免費模型優先</footer>
+      <footer className="footer">AI Integrate <span>·</span> 個人使用工具 <span>·</span> 免費模型優先 · 付費模型尚未啟用</footer>
     </main>
 
     {showSettings && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setShowSettings(false)}><div className="settings-modal"><div className="modal-head"><div><div className="eyebrow">CONNECTION</div><h2>連線設定</h2></div><button className="icon-button" onClick={() => setShowSettings(false)}>×</button></div>
