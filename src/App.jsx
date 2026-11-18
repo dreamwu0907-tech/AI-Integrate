@@ -15,11 +15,18 @@ const taskLabels = {
 
 function classifyTask(text) {
   const s = text.toLowerCase();
-  if (/translate|翻譯|英文|文法|grammar|sentence|日文/.test(s)) return "translation";
-  if (/程式|github|code|debug|javascript|python|react|網站|程式碼/.test(s)) return "coding";
-  if (/熱阻|壓降|流量|水冷|液冷|散熱|thermal|cooling|公式|計算|工程/.test(s)) return "engineering";
-  if (/股票|台股|產業|公司|財報|市場|研究|比較|趨勢|分析/.test(s)) return "research";
+  if (/translate|翻譯|英文|文法|grammar|sentence|日文|校稿|潤稿|改寫/.test(s)) return "translation";
+  if (/程式|github|code|debug|javascript|typescript|python|react|網站|程式碼|api|bug|部署|repository/.test(s)) return "coding";
+  if (/熱阻|壓降|流量|水冷|液冷|散熱|thermal|cooling|公式|計算|工程|冷板|風量|泵浦|材料|機構/.test(s)) return "engineering";
+  if (/股票|台股|產業|公司|財報|市場|研究|比較|趨勢|分析|投資|營收|eps|供應鏈/.test(s)) return "research";
   return "general";
+}
+
+function classifyDifficulty(text, mode) {
+  const s = text.toLowerCase();
+  if (mode === "deep" || mode === "coding" || text.length > 900 ||
+      /詳細分析|深入|多步驟|完整程式|架構設計|除錯|比較|推導|請逐步|benchmark|debug|refactor/.test(s)) return "complex";
+  return "standard";
 }
 
 function readHistory() {
@@ -41,6 +48,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [apiBaseDraft, setApiBaseDraft] = useState(API_BASE);
   const task = useMemo(() => classifyTask(prompt), [prompt]);
+  const difficulty = useMemo(() => classifyDifficulty(prompt, mode), [prompt, mode]);
   const modeLabels = { auto: "自動選擇", deep: "深度分析", coding: "程式開發", compare: "多 AI 比較" };
 
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(history.slice(0, 40))); }, [history]);
@@ -103,7 +111,9 @@ export default function App() {
         const data = await request("/api/chat", {
           method: "POST",
           body: JSON.stringify({
-            model: "openrouter/free",
+            model: "auto",
+            task: activeMode === "coding" ? "coding" : taskType,
+            difficulty: classifyDifficulty(prompt, mode),
             max_tokens: activeMode === "auto" ? 1800 : 3000,
             messages: [
               { role: "system", content: systemPrompts[activeMode] },
@@ -111,7 +121,16 @@ export default function App() {
             ]
           })
         });
-        const rows = [{ model: data.model || "openrouter/free", text: data.answer, usage: data.usage }];
+        const rows = [{
+          model: data.model || "免費模型",
+          text: data.answer,
+          usage: data.usage,
+          routeReason: data.routeReason || "",
+          task: data.task || taskType,
+          difficulty: data.difficulty || classifyDifficulty(prompt, mode),
+          fallback: data.fallback || false,
+          diagnostics: data.diagnostics || null
+        }];
         setResponses(rows);
         const record = { id: Date.now(), prompt, task: taskType, mode, responses: rows, createdAt: new Date().toISOString() };
         setHistory(h => [record, ...h].slice(0, 40));
@@ -164,8 +183,14 @@ export default function App() {
         </div>
         {error && <div className="error-box"><CircleHelp size={17}/>{error}</div>}
         {loading && <div className="loading-line"><LoaderCircle className="spin" size={18}/> 正在等待模型回覆，目前使用免費模型，可能因供應商負載而較慢…</div>}
-        {responses.length > 0 && <div className="results"><div className="results-heading"><div><div className="eyebrow">AI OUTPUT</div><h2>模型回答</h2></div><button className="text-button" onClick={() => copy(responses.map(r => `【${r.model}】\n${r.text}`).join("\n\n"))}><Copy size={15}/> 複製全部</button></div><div className={responses.length > 1 ? "response-grid" : "response-grid single"}>{responses.map((r, i) => <article className="response-card" key={i}><div className="response-head"><span className="model-avatar"><Bot size={17}/></span><div><b>{r.model}</b><small>{r.failed ? "請求失敗" : (modeLabels[mode] || "模型回覆")}</small></div><button className="icon-button" onClick={() => copy(r.text)} title="複製答案"><Copy size={16}/></button></div><div className="response-text">{r.text}</div></article>)}</div></div>}
-        {!responses.length && <div className="hint-row"><div className="hint-icon"><Activity size={18}/></div><div><b>任務分類會先在本機執行</b><span>可切換一般對話、深度分析與程式開發；目前三種模式都使用 OpenRouter 免費路由，不會產生付費模型費用。</span></div></div>}
+        {responses.length > 0 && <div className="results"><div className="results-heading"><div><div className="eyebrow">AI OUTPUT</div><h2>模型回答</h2></div><button className="text-button" onClick={() => copy(responses.map(r => `【${r.model}】\n${r.text}`).join("\n\n"))}><Copy size={15}/> 複製全部</button></div><div className={responses.length > 1 ? "response-grid" : "response-grid single"}>{responses.map((r, i) => <article className="response-card" key={i}><div className="response-head"><span className="model-avatar"><Bot size={17}/></span><div><b>{r.model}</b><small>{r.failed ? "請求失敗" : (r.routeReason || modeLabels[mode] || "模型回覆")}</small></div><button className="icon-button" onClick={() => copy(r.text)} title="複製答案"><Copy size={16}/></button></div><div className="response-text">{r.text}</div>
+          {r.diagnostics && <div className="response-diagnostics">
+            <span>任務：{taskLabels[r.task] || r.task}</span>
+            <span>難度：{r.difficulty === "complex" ? "高複雜度" : "一般"}</span>
+            {r.fallback && <span>已自動切換備援免費模型</span>}
+            {r.diagnostics.finishReason && <span>結束狀態：{r.diagnostics.finishReason}</span>}
+          </div>}</article>)}</div></div>}
+        {!responses.length && <div className="hint-row"><div className="hint-icon"><Activity size={18}/></div><div><b>自動判斷任務並選擇免費模型</b><span>系統會依任務類型與難度，從即時免費模型清單挑選合適模型；若回答為空或失敗，只會嘗試其他免費模型，不會自動呼叫付費模型。</span></div></div>}
       </section>}
 
       {page === "models" && <section className="content"><div className="page-heading"><div><div className="eyebrow"><Cpu size={14}/> MODEL DIRECTORY</div><h1>模型管理</h1><p>目前只列出免費文字模型；付費模型尚未開放，避免意外產生費用。</p></div><button className="secondary-button" onClick={loadModels}><RefreshCw size={15}/> 更新清單</button></div>
